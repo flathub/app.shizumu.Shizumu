@@ -29,7 +29,7 @@ modules:
       # (which uses the manifest's `command: shizumu` directly with no env
       # override) works. Native rpm/deb keep the env wrapper for the v0.2.1
       # webkit Wayland-input fix.
-      - sed -i 's|^Exec=env GDK_BACKEND=x11 shizumu|Exec=shizumu|' app.shizumu.Shizumu.desktop
+      - desktop-file-edit --set-key=Exec --set-value=shizumu app.shizumu.Shizumu.desktop
       - install -Dm644 app.shizumu.Shizumu.desktop /app/share/applications/app.shizumu.Shizumu.desktop
       - install -Dm644 icon-32.png /app/share/icons/hicolor/32x32/apps/app.shizumu.Shizumu.png
       - install -Dm644 icon-128.png /app/share/icons/hicolor/128x128/apps/app.shizumu.Shizumu.png
