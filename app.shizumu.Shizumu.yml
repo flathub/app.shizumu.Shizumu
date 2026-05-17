@@ -19,6 +19,17 @@ modules:
     build-commands:
       - install -Dm755 shizumu /app/bin/shizumu
       - install -Dm755 shizumu-cli /app/bin/shizumu-cli
+      # Strip the native-install env wrapper from the .desktop's Exec line.
+      # Flatpak's exporter takes the first word of Exec= as the --command for
+      # `flatpak run`, so leaving "env GDK_BACKEND=x11" in place rewrites the
+      # exported launcher to "flatpak run --command=env … GDK_BACKEND=x11
+      # shizumu", which forces x11 inside the sandbox. With finish-args
+      # `--socket=fallback-x11`, no X11 socket is provided on Wayland
+      # sessions, so the desktop-icon launch fails silently while CLI launch
+      # (which uses the manifest's `command: shizumu` directly with no env
+      # override) works. Native rpm/deb keep the env wrapper for the v0.2.1
+      # webkit Wayland-input fix.
+      - sed -i 's|^Exec=env GDK_BACKEND=x11 shizumu|Exec=shizumu|' app.shizumu.Shizumu.desktop
       - install -Dm644 app.shizumu.Shizumu.desktop /app/share/applications/app.shizumu.Shizumu.desktop
       - install -Dm644 icon-32.png /app/share/icons/hicolor/32x32/apps/app.shizumu.Shizumu.png
       - install -Dm644 icon-128.png /app/share/icons/hicolor/128x128/apps/app.shizumu.Shizumu.png
@@ -27,8 +38,8 @@ modules:
       - install -Dm644 app.shizumu.Shizumu.metainfo.xml /app/share/metainfo/app.shizumu.Shizumu.metainfo.xml
     sources:
       - type: archive
-        url: https://gitlab.com/api/v4/projects/81041793/packages/generic/shizumu/0.2.8/shizumu-0.2.8-linux-x86_64.tar.gz
-        sha256: 034b8b082bf55eba119336ea0b37274604869bccb843b2ba9131eec2e5ebf036
+        url: https://gitlab.com/api/v4/projects/81041793/packages/generic/shizumu/0.2.16/shizumu-0.2.16-linux-x86_64.tar.gz
+        sha256: d0e30ed954999126a24ce0b105ecc70cefb53b16d7cb0b916f7c00bf93c9b36f
         x-checker-data:
           type: json
           url: https://gitlab.com/api/v4/projects/81041793/releases/permalink/latest
