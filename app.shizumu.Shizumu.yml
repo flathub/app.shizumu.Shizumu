@@ -3,6 +3,8 @@ runtime: org.gnome.Platform
 runtime-version: '50'
 sdk: org.gnome.Sdk
 command: shizumu
+tags: 
+  - proprietary
 finish-args:
   - --share=ipc
   - --socket=fallback-x11
