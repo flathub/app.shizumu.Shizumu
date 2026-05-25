@@ -38,8 +38,8 @@ modules:
       - install -Dm644 app.shizumu.Shizumu.metainfo.xml /app/share/metainfo/app.shizumu.Shizumu.metainfo.xml
     sources:
       - type: archive
-        url: https://gitlab.com/api/v4/projects/81041793/packages/generic/shizumu/0.3.0/shizumu-0.3.0-linux-x86_64.tar.gz
-        sha256: a06b2f0d572e088139b88ee39484a513a835a010fd6be723869d31b0bab7e22f
+        url: https://gitlab.com/api/v4/projects/81041793/packages/generic/shizumu/0.3.2/shizumu-0.3.2-linux-x86_64.tar.gz
+        sha256: cb72c852f9ed5f8d3ddace2e8c9d96697b77b17dc045a63e1a61e0a7ac0d44e5
         x-checker-data:
           type: json
           url: https://gitlab.com/api/v4/projects/81041793/releases/permalink/latest
