@@ -2,46 +2,182 @@ app-id: app.shizumu.Shizumu
 runtime: org.gnome.Platform
 runtime-version: '50'
 sdk: org.gnome.Sdk
-command: shizumu
+# Built from source: rust-stable compiles src-tauri, node24 builds the frontend.
+# node24 (not node20/22) because a transitive dev dependency declares
+# `engines: { node: >= 24 }`; older extensions build but warn on every install.
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+  - org.freedesktop.Sdk.Extension.node24
+# The command — and thus the launched binary's argv[0] — must equal the app-id.
+# On Wayland the compositor takes the surface's app_id from the GTK prgname
+# (argv[0] basename) and matches it to `<app_id>.desktop` to find the icon. With
+# command: shizumu the app_id was "shizumu" while the desktop file is
+# app.shizumu.Shizumu.desktop, so nothing matched and the taskbar showed a
+# generic icon on Wayland (StartupWMClass is X11-only and ignored there). The
+# main binary is installed under this same name below; shizumu-cli is unchanged.
+command: app.shizumu.Shizumu
 finish-args:
   - --share=ipc
+  # Sync. Without this the sandbox has no network at all and the relay is
+  # simply unreachable: the app opens, writes, and silently never syncs.
+  # The published v0.3.2 manifest omits it correctly, because v0.3.2 had no
+  # sync to do. 0.7.0 is the release that adds it, so it is also the release
+  # that has to ask for the socket. Verified against a local build: without
+  # this line `flatpak info --show-permissions` reports `shared=ipc;` and
+  # nothing else.
+  - --share=network
   - --socket=fallback-x11
   - --socket=wayland
   - --device=dri
   # system tray (gnome appindicator, kde statusnotifier)
   - --talk-name=org.kde.StatusNotifierItem
   - --talk-name=com.canonical.AppMenu.Registrar
+  # Tray icon visibility on the host. Tauri's tray-icon plugin writes
+  # the PNG to $XDG_RUNTIME_DIR/tray-icon/ and broadcasts that path via
+  # the SNI IconName property. In flatpak each app has a private
+  # xdg-run, so gnome-shell / kded (outside the sandbox) can't read
+  # the broadcast path. Bind-mount the host's $XDG_RUNTIME_DIR/tray-icon
+  # into the sandbox at the same name so the broadcast resolves
+  # identically on both sides.
+  - --filesystem=xdg-run/tray-icon:create
 modules:
   - shared-modules/libayatana-appindicator/libayatana-appindicator-gtk3.json
 
   - name: shizumu
     buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/rust-stable/bin:/usr/lib/sdk/node24/bin
+      env:
+        # Cargo vendor dir laid down by cargo-sources.json. The path is
+        # /run/build/<module-name>/cargo — keep it in sync with `name:` above.
+        CARGO_HOME: /run/build/shizumu/cargo
+        CARGO_NET_OFFLINE: 'true'
+        # npm offline cache laid down by node-sources.json, same rule.
+        XDG_CACHE_HOME: /run/build/shizumu/flatpak-node/cache
+        npm_config_cache: /run/build/shizumu/flatpak-node/npm-cache
+        npm_config_offline: 'true'
+        # @playwright/test is a devDependency, and devDependencies are needed
+        # here (vite and svelte build the frontend). But playwright's five
+        # browser archives — chromium, headless-shell, firefox, webkit,
+        # ffmpeg — are ~400-500MB that only the VR suite uses and that never
+        # ship in the app. scripts/gen-flatpak-sources.sh prunes them from
+        # node-sources.json; this stops npm ci from going to look for them.
+        PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
     build-commands:
-      - install -Dm755 shizumu /app/bin/shizumu
-      - install -Dm755 shizumu-cli /app/bin/shizumu-cli
-      # Strip the native-install env wrapper from the .desktop's Exec line.
-      # Flatpak's exporter takes the first word of Exec= as the --command for
-      # `flatpak run`, so leaving "env GDK_BACKEND=x11" in place rewrites the
-      # exported launcher to "flatpak run --command=env … GDK_BACKEND=x11
-      # shizumu", which forces x11 inside the sandbox. With finish-args
-      # `--socket=fallback-x11`, no X11 socket is provided on Wayland
-      # sessions, so the desktop-icon launch fails silently while CLI launch
-      # (which uses the manifest's `command: shizumu` directly with no env
-      # override) works. Native rpm/deb keep the env wrapper for the v0.2.1
-      # webkit Wayland-input fix.
-      - desktop-file-edit --set-key=Exec --set-value=shizumu app.shizumu.Shizumu.desktop
-      - install -Dm644 app.shizumu.Shizumu.desktop /app/share/applications/app.shizumu.Shizumu.desktop
-      - install -Dm644 icon-32.png /app/share/icons/hicolor/32x32/apps/app.shizumu.Shizumu.png
-      - install -Dm644 icon-128.png /app/share/icons/hicolor/128x128/apps/app.shizumu.Shizumu.png
-      - install -Dm644 icon-256.png /app/share/icons/hicolor/256x256/apps/app.shizumu.Shizumu.png
-      - install -Dm644 icon-512.png /app/share/icons/hicolor/512x512/apps/app.shizumu.Shizumu.png
-      - install -Dm644 app.shizumu.Shizumu.metainfo.xml /app/share/metainfo/app.shizumu.Shizumu.metainfo.xml
+      # 1. Frontend. `cargo build` does not run tauri.conf.json's
+      #    beforeBuildCommand (only `tauri build` does), so the frontend is
+      #    built explicitly here. It must land in dist/ before the Rust build,
+      #    because tauri-build resolves frontendDist at compile time.
+      - npm ci --offline
+      - npm run build
+
+      # 2. Backend. Deliberately NOT `tauri build` — its bundler emits
+      #    deb/rpm/AppImage artifacts that are meaningless inside a flatpak.
+      #    --bin twice so op_log_audit (a debugging tool) is neither built
+      #    nor shipped.
+      - cargo --offline fetch --manifest-path src-tauri/Cargo.toml
+      # MUST be `tauri build`, not `cargo build`. This is the same trap
+      # .gitlab-ci.yml documents for the e2e job, and the flatpak walked
+      # straight into it: a bare cargo build resolves the webview URL to
+      # tauri.conf.json's devUrl (http://localhost:1420) instead of
+      # embedding frontendDist, so the window opens on "Could not connect
+      # to localhost: Connection refused", svelte never mounts, and the app
+      # is a white box. Building the frontend separately does NOT help; the
+      # binary never reads dist/, the assets have to be compiled in, and
+      # only the tauri CLI arranges that.
+      #
+      # Measured on the produced binary: a cargo build embeds ZERO
+      # assets/index-*.js references. That is what shipped before this fix.
+      #
+      # --no-bundle stops it emitting deb/rpm/AppImage, which was the only
+      # reason cargo build was reached for here. It still leaves
+      # target/release/shizumu exactly where the install step below wants it.
+      - npx tauri build --no-bundle
+      # shizumu-cli is a plain binary that the tauri CLI does not build.
+      - cargo build --offline --release --manifest-path src-tauri/Cargo.toml
+        --bin shizumu-cli
+      # Install the GUI binary UNDER THE APP-ID so its argv[0] basename — and
+      # therefore the Wayland app_id — is app.shizumu.Shizumu, matching the
+      # exported desktop file and letting the compositor find the icon. The
+      # build still produces target/release/shizumu; only the installed name
+      # changes. shizumu-cli keeps its own name (it is not the windowed app).
+      - install -Dm755 src-tauri/target/release/shizumu ${FLATPAK_DEST}/bin/${FLATPAK_ID}
+      - install -Dm755 src-tauri/target/release/shizumu-cli ${FLATPAK_DEST}/bin/shizumu-cli
+
+      # 3. Desktop integration.
+      # Strip the native-install env wrapper from the .desktop's Exec line and
+      # point it at the app-id-named binary. Flatpak's exporter takes the first
+      # word of Exec= as the --command for `flatpak run`, so leaving
+      # "env GDK_BACKEND=x11" in place rewrites the exported launcher to
+      # "flatpak run --command=env … GDK_BACKEND=x11 shizumu", which forces x11
+      # inside the sandbox. With finish-args `--socket=fallback-x11`, no X11
+      # socket is provided on Wayland sessions, so the desktop-icon launch fails
+      # silently while CLI launch works. Native rpm/deb keep the env wrapper for
+      # the v0.2.1 webkit Wayland-input fix. The value is now the app-id (see the
+      # `command:` note above) so the Wayland app_id matches this desktop file's
+      # basename and the icon resolves.
+      # desktop-file-edit, not sed — this is what flathub review settled on
+      # (flathub commit b61d94e). Keep it.
+      - desktop-file-edit --set-key=Exec --set-value=${FLATPAK_ID}
+        src-tauri/resources/app.shizumu.Shizumu.desktop
+      # Under --socket=fallback-x11 the renamed binary's X11 WM_CLASS is now the
+      # app-id too, so the X11 icon match needs StartupWMClass to follow. Only
+      # the flatpak's copy is edited here; native deb/rpm keep StartupWMClass
+      # =shizumu, which is right for their `shizumu` binary.
+      - desktop-file-edit --set-key=StartupWMClass --set-value=${FLATPAK_ID}
+        src-tauri/resources/app.shizumu.Shizumu.desktop
+      - install -Dm644 src-tauri/resources/app.shizumu.Shizumu.desktop
+        ${FLATPAK_DEST}/share/applications/${FLATPAK_ID}.desktop
+      - install -Dm644 src-tauri/resources/app.shizumu.Shizumu.metainfo.xml
+        ${FLATPAK_DEST}/share/metainfo/${FLATPAK_ID}.metainfo.xml
+      - install -Dm644 src-tauri/icons/32x32.png
+        ${FLATPAK_DEST}/share/icons/hicolor/32x32/apps/${FLATPAK_ID}.png
+      - install -Dm644 src-tauri/icons/128x128.png
+        ${FLATPAK_DEST}/share/icons/hicolor/128x128/apps/${FLATPAK_ID}.png
+      - install -Dm644 src-tauri/icons/256x256.png
+        ${FLATPAK_DEST}/share/icons/hicolor/256x256/apps/${FLATPAK_ID}.png
+      - install -Dm644 src-tauri/icons/512x512.png
+        ${FLATPAK_DEST}/share/icons/hicolor/512x512/apps/${FLATPAK_ID}.png
     sources:
-      - type: archive
-        url: https://gitlab.com/api/v4/projects/81041793/packages/generic/shizumu/0.3.2/shizumu-0.3.2-linux-x86_64.tar.gz
-        sha256: cb72c852f9ed5f8d3ddace2e8c9d96697b77b17dc045a63e1a61e0a7ac0d44e5
+      # Source build from the public github mirror. `commit` must name a tag
+      # that the mirror job pushes and never deletes — the job force-pushes
+      # main, so a branch-only reference would be garbage-collected out from
+      # under flathub at the next release.
+      - type: git
+        url: https://github.com/shizumu-app/shizumu.git
+        tag: v0.7.1
+        commit: 4d4701170ab76b1cdb00429b0c1a551014081380
         x-checker-data:
-          type: json
-          url: https://gitlab.com/api/v4/projects/81041793/releases/permalink/latest
-          version-query: .tag_name | sub("^v"; "")
-          url-query: .assets.links[] | select(.name == "linux-tarball") | .url
+          type: git
+          tag-pattern: '^v([\d.]+)$'
+      # OpenSSL's C source, which nothing else brings in.
+      #
+      # rusqlite pulls bundled-sqlcipher-vendored-openssl, and this repo
+      # carries a PATCHED openssl-src at src-tauri/vendor/openssl-src
+      # (dd6a09c, no-asm for the Android x86_64 cross-build). That crate's
+      # build.rs downloads this tarball at build time unless the `openssl`
+      # directory is already beside it, and src-tauri/vendor/.gitignore
+      # excludes exactly that directory. So a clean checkout has the crate
+      # and not the source it wraps, and the build reaches for the network
+      # that flathub does not have:
+      #
+      #   openssl-src: downloading OpenSSL 3.6.2...
+      #   failed to download OpenSSL from https://github.com/openssl/...
+      #
+      # Fetching it here as a normal source satisfies build.rs's existence
+      # check before cargo ever runs, and keeps a 52 MB C tree out of the
+      # app's git history.
+      #
+      # The version is the part of openssl-src's version after the '+'
+      # (300.6.0+3.6.2), which is what its build.rs parses to build the URL.
+      # Bump both together. sha256 verified against openssl's own published
+      # .sha256 for the release, not just the bytes that arrived here.
+      - type: archive
+        url: https://github.com/openssl/openssl/releases/download/openssl-3.6.2/openssl-3.6.2.tar.gz
+        sha256: aaf51a1fe064384f811daeaeb4ec4dce7340ec8bd893027eee676af31e83a04f
+        dest: src-tauri/vendor/openssl-src/openssl
+      # Offline dependency trees. Both are lockfile-derived and MUST be
+      # regenerated whenever Cargo.lock or package-lock.json changes —
+      # see scripts/update-manifests.sh.
+      - cargo-sources.json
+      - node-sources.json
