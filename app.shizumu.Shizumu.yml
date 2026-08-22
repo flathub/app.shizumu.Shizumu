@@ -94,8 +94,8 @@ modules:
       # target/release/shizumu exactly where the install step below wants it.
       - npx tauri build --no-bundle
       # shizumu-cli is a plain binary that the tauri CLI does not build.
-      - cargo build --offline --release --manifest-path src-tauri/Cargo.toml
-        --bin shizumu-cli
+      - cargo build --offline --release --manifest-path src-tauri/Cargo.toml --bin
+        shizumu-cli
       # Install the GUI binary UNDER THE APP-ID so its argv[0] basename — and
       # therefore the Wayland app_id — is app.shizumu.Shizumu, matching the
       # exported desktop file and letting the compositor find the icon. The
@@ -118,26 +118,18 @@ modules:
       # basename and the icon resolves.
       # desktop-file-edit, not sed — this is what flathub review settled on
       # (flathub commit b61d94e). Keep it.
-      - desktop-file-edit --set-key=Exec --set-value=${FLATPAK_ID}
-        src-tauri/resources/app.shizumu.Shizumu.desktop
+      - desktop-file-edit --set-key=Exec --set-value=${FLATPAK_ID} src-tauri/resources/app.shizumu.Shizumu.desktop
       # Under --socket=fallback-x11 the renamed binary's X11 WM_CLASS is now the
       # app-id too, so the X11 icon match needs StartupWMClass to follow. Only
       # the flatpak's copy is edited here; native deb/rpm keep StartupWMClass
       # =shizumu, which is right for their `shizumu` binary.
-      - desktop-file-edit --set-key=StartupWMClass --set-value=${FLATPAK_ID}
-        src-tauri/resources/app.shizumu.Shizumu.desktop
-      - install -Dm644 src-tauri/resources/app.shizumu.Shizumu.desktop
-        ${FLATPAK_DEST}/share/applications/${FLATPAK_ID}.desktop
-      - install -Dm644 src-tauri/resources/app.shizumu.Shizumu.metainfo.xml
-        ${FLATPAK_DEST}/share/metainfo/${FLATPAK_ID}.metainfo.xml
-      - install -Dm644 src-tauri/icons/32x32.png
-        ${FLATPAK_DEST}/share/icons/hicolor/32x32/apps/${FLATPAK_ID}.png
-      - install -Dm644 src-tauri/icons/128x128.png
-        ${FLATPAK_DEST}/share/icons/hicolor/128x128/apps/${FLATPAK_ID}.png
-      - install -Dm644 src-tauri/icons/256x256.png
-        ${FLATPAK_DEST}/share/icons/hicolor/256x256/apps/${FLATPAK_ID}.png
-      - install -Dm644 src-tauri/icons/512x512.png
-        ${FLATPAK_DEST}/share/icons/hicolor/512x512/apps/${FLATPAK_ID}.png
+      - desktop-file-edit --set-key=StartupWMClass --set-value=${FLATPAK_ID} src-tauri/resources/app.shizumu.Shizumu.desktop
+      - install -Dm644 src-tauri/resources/app.shizumu.Shizumu.desktop ${FLATPAK_DEST}/share/applications/${FLATPAK_ID}.desktop
+      - install -Dm644 src-tauri/resources/app.shizumu.Shizumu.metainfo.xml ${FLATPAK_DEST}/share/metainfo/${FLATPAK_ID}.metainfo.xml
+      - install -Dm644 src-tauri/icons/32x32.png ${FLATPAK_DEST}/share/icons/hicolor/32x32/apps/${FLATPAK_ID}.png
+      - install -Dm644 src-tauri/icons/128x128.png ${FLATPAK_DEST}/share/icons/hicolor/128x128/apps/${FLATPAK_ID}.png
+      - install -Dm644 src-tauri/icons/256x256.png ${FLATPAK_DEST}/share/icons/hicolor/256x256/apps/${FLATPAK_ID}.png
+      - install -Dm644 src-tauri/icons/512x512.png ${FLATPAK_DEST}/share/icons/hicolor/512x512/apps/${FLATPAK_ID}.png
     sources:
       # Source build from the public github mirror. `commit` must name a tag
       # that the mirror job pushes and never deletes — the job force-pushes
@@ -145,11 +137,11 @@ modules:
       # under flathub at the next release.
       - type: git
         url: https://github.com/shizumu-app/shizumu.git
-        tag: v0.7.1
-        commit: 4d4701170ab76b1cdb00429b0c1a551014081380
+        tag: v0.7.3
+        commit: 279a0068734d4c10c03d682af54e255f8e9f1614
         x-checker-data:
           type: git
-          tag-pattern: '^v([\d.]+)$'
+          tag-pattern: ^v([\d.]+)$
       # OpenSSL's C source, which nothing else brings in.
       #
       # rusqlite pulls bundled-sqlcipher-vendored-openssl, and this repo
