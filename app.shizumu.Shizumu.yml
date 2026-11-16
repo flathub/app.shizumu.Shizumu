@@ -164,11 +164,11 @@ modules:
       # under flathub at the next release.
       - type: git
         url: https://github.com/shizumu-app/shizumu.git
-        tag: v0.8.2
-        commit: 76071e6376d291d8b455a780c6a6a771164f4de7
-        x-checker-data:
-          type: git
-          tag-pattern: '^v([\d.]+)$'
+        tag: v0.8.3
+        commit: 8e0adcf98a1f04414d5c271b0b742fc25b21f810
+        # No x-checker-data: the tag pipeline's flathub-pr job opens the
+        # update PR itself (scripts/flathub-pr.sh), and flathub's checker
+        # would open a second one for the same tag.
       # OpenSSL's C source, which nothing else brings in.
       #
       # rusqlite pulls bundled-sqlcipher-vendored-openssl, and this repo
