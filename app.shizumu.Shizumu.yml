@@ -164,8 +164,7 @@ modules:
       # under flathub at the next release.
       - type: git
         url: https://github.com/shizumu-app/shizumu.git
-        tag: v0.8.3
-        commit: 8e0adcf98a1f04414d5c271b0b742fc25b21f810
+        commit: aaf71de021cface76dbd9ce4091a73f9c941a411
         # No x-checker-data: the tag pipeline's flathub-pr job opens the
         # update PR itself (scripts/flathub-pr.sh), and flathub's checker
         # would open a second one for the same tag.
